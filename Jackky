@@ -1,0 +1,265 @@
+-- Version 0.7.0 (Fixed UI Visibility & Executor Compatibility)
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- รองรับ Executor ในการดึง Parent UI
+local CoreGui = game:GetService("CoreGui")
+local ParentGui = gethui and gethui() or CoreGui or LocalPlayer:WaitForChild("PlayerGui")
+
+-- ลบ UI เก่าออกก่อนถ้ามีอยู่แล้ว
+if ParentGui:FindFirstChild("BloxFruitTest") then
+	ParentGui:FindFirstChild("BloxFruitTest"):Destroy()
+end
+
+-- ==========================================
+-- ตัวแปรระบบ (State Variables)
+-- ==========================================
+local SavedSlots = {[1] = nil, [2] = nil, [3] = nil}
+local SelectedSlot = 1             
+local IsTeleportEnabled = true     
+local FlySpeed = 100               
+local CurrentTween = nil
+
+local SaveKey = Enum.KeyCode.P     
+local TeleportKey = Enum.KeyCode.T 
+
+-- ==========================================
+-- สร้าง ScreenGui และ Frame หลัก
+-- ==========================================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "BloxFruitTest"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = ParentGui
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25) -- ปรับเป็นสีทึบให้เห็นชัดเจน
+MainFrame.BorderColor3 = Color3.fromRGB(255, 255, 255)
+MainFrame.BorderSizePixel = 2
+MainFrame.ClipsDescendants = true
+MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+MainFrame.Size = UDim2.new(0, 500, 0, 320) -- ปรับขนาดเป็น Pixels ให้แน่นอน
+MainFrame.Parent = ScreenGui
+
+-- Side Navigation Panel
+local Sidebar = Instance.new("ScrollingFrame")
+Sidebar.Name = "Sidebar"
+Sidebar.Active = true
+Sidebar.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+Sidebar.BorderSizePixel = 0
+Sidebar.Size = UDim2.new(0.3, 0, 1, 0)
+Sidebar.CanvasSize = UDim2.new(0, 0, 1.5, 0)
+Sidebar.ScrollBarThickness = 4
+Sidebar.Parent = MainFrame
+
+local SidebarLayout = Instance.new("UIListLayout")
+SidebarLayout.Padding = UDim.new(0, 4)
+SidebarLayout.SortOrder = Enum.SortOrder.LayoutOrder
+SidebarLayout.Parent = Sidebar
+
+-- Pages Container
+local PagesContainer = Instance.new("Frame")
+PagesContainer.Name = "PagesContainer"
+PagesContainer.BackgroundTransparency = 1
+PagesContainer.Position = UDim2.new(0.3, 5, 0, 0)
+PagesContainer.Size = UDim2.new(0.7, -5, 1, 0)
+PagesContainer.Parent = MainFrame
+
+local Pages = {}
+
+local function CreatePage(pageName)
+	local page = Instance.new("ScrollingFrame")
+	page.Name = pageName
+	page.Active = true
+	page.BackgroundTransparency = 1
+	page.BorderSizePixel = 0
+	page.Size = UDim2.new(1, 0, 1, 0)
+	page.CanvasSize = UDim2.new(0, 0, 2, 0)
+	page.ScrollBarThickness = 4
+	page.Visible = false
+	page.Parent = PagesContainer
+
+	local layout = Instance.new("UIListLayout")
+	layout.Padding = UDim.new(0, 4)
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Parent = page
+
+	Pages[pageName] = page
+	return page
+end
+
+-- หมวดหมู่
+local categories = {
+	{ ID = "Main", Text = "Main" },
+	{ ID = "Position", Text = "Position System" },
+	{ ID = "Tp", Text = "Teleport" },
+	{ ID = "NPC", Text = "NPC" }
+}
+
+for idx, cat in ipairs(categories) do
+	local btn = Instance.new("TextButton")
+	btn.Name = cat.ID
+	btn.Font = Enum.Font.SourceSansBold
+	btn.Text = cat.Text
+	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	btn.TextSize = 14
+	btn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+	btn.BorderSizePixel = 0
+	btn.Size = UDim2.new(1, -5, 0, 30)
+	btn.LayoutOrder = idx
+	btn.Parent = Sidebar
+
+	local page = CreatePage(cat.ID)
+
+	btn.MouseButton1Click:Connect(function()
+		for pName, pFrame in pairs(Pages) do
+			pFrame.Visible = (pName == cat.ID)
+		end
+	end)
+end
+
+Pages["Main"].Visible = true
+
+-- ฟังก์ชันสร้างปุ่มวาร์ป
+local function AddTeleportButton(targetPage, name, text, targetVector)
+	local btn = Instance.new("TextButton")
+	btn.Name = name
+	btn.Font = Enum.Font.SourceSans
+	btn.Text = text
+	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	btn.TextSize = 14
+	btn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+	btn.BorderSizePixel = 0
+	btn.Size = UDim2.new(0.95, 0, 0, 30)
+	btn.Parent = targetPage
+
+	btn.MouseButton1Click:Connect(function()
+		if LocalPlayer and LocalPlayer.Character then
+			LocalPlayer.Character:PivotTo(CFrame.new(targetVector))
+		end
+	end)
+
+	return btn
+end
+
+-- ==========================================
+-- 1. Position System Page
+-- ==========================================
+local PosPage = Pages["Position"]
+
+local function CreatePosButton(name, defaultText, bgColor)
+	local btn = Instance.new("TextButton")
+	btn.Name = name
+	btn.Font = Enum.Font.SourceSansBold
+	btn.Text = defaultText
+	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	btn.TextSize = 14
+	btn.BackgroundColor3 = bgColor or Color3.fromRGB(45, 45, 45)
+	btn.BorderSizePixel = 0
+	btn.Size = UDim2.new(0.95, 0, 0, 30)
+	btn.Parent = PosPage
+	return btn
+end
+
+local SlotContainer = Instance.new("Frame")
+SlotContainer.Name = "SlotContainer"
+SlotContainer.BackgroundTransparency = 1
+SlotContainer.Size = UDim2.new(0.95, 0, 0, 35)
+SlotContainer.Parent = PosPage
+
+local SlotButtons = {}
+for i = 1, 3 do
+	local slotBtn = Instance.new("TextButton")
+	slotBtn.Name = "Slot" .. i
+	slotBtn.Font = Enum.Font.SourceSans
+	slotBtn.Text = "Slot " .. i .. "\n(Empty)"
+	slotBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	slotBtn.TextSize = 12
+	slotBtn.BackgroundColor3 = (i == 1) and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(50, 50, 50)
+	slotBtn.BorderSizePixel = 0
+	slotBtn.Size = UDim2.new(0.31, 0, 1, 0)
+	slotBtn.Position = UDim2.new((i - 1) * 0.34, 0, 0, 0)
+	slotBtn.Parent = SlotContainer
+	SlotButtons[i] = slotBtn
+end
+
+local SaveBtn = CreatePosButton("SavePosBtn", "Save to Slot 1 [" .. SaveKey.Name .. "]")
+local ClearSlotBtn = CreatePosButton("ClearSlotBtn", "Clear Slot 1", Color3.fromRGB(180, 50, 50))
+local ClearAllBtn = CreatePosButton("ClearAllBtn", "Clear All Slots", Color3.fromRGB(150, 0, 0))
+local InstantTpBtn = CreatePosButton("InstantTpBtn", "Teleport to Slot 1 [" .. TeleportKey.Name .. "]")
+
+local function UpdateUI()
+	for i = 1, 3 do
+		local status = SavedSlots[i] and "(Saved)" or "(Empty)"
+		SlotButtons[i].Text = "Slot " .. i .. "\n" .. status
+		SlotButtons[i].BackgroundColor3 = (i == SelectedSlot) and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(50, 50, 50)
+	end
+
+	SaveBtn.Text = "Save to Slot " .. SelectedSlot .. " [" .. SaveKey.Name .. "]"
+	ClearSlotBtn.Text = "Clear Slot " .. SelectedSlot
+	InstantTpBtn.Text = "Teleport to Slot " .. SelectedSlot .. " [" .. TeleportKey.Name .. "]"
+end
+
+for i = 1, 3 do
+	SlotButtons[i].MouseButton1Click:Connect(function()
+		SelectedSlot = i
+		UpdateUI()
+	end)
+end
+
+SaveBtn.MouseButton1Click:Connect(function()
+	local char = LocalPlayer.Character
+	if char and char:FindFirstChild("HumanoidRootPart") then
+		SavedSlots[SelectedSlot] = char.HumanoidRootPart.CFrame
+		UpdateUI()
+	end
+end)
+
+ClearSlotBtn.MouseButton1Click:Connect(function()
+	SavedSlots[SelectedSlot] = nil
+	UpdateUI()
+end)
+
+ClearAllBtn.MouseButton1Click:Connect(function()
+	for i = 1, 3 do SavedSlots[i] = nil end
+	UpdateUI()
+end)
+
+InstantTpBtn.MouseButton1Click:Connect(function()
+	local targetCFrame = SavedSlots[SelectedSlot]
+	local char = LocalPlayer.Character
+	if char and char:FindFirstChild("HumanoidRootPart") and targetCFrame then
+		char.HumanoidRootPart.CFrame = targetCFrame
+	end
+end)
+
+-- Keybind Listeners
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if input.KeyCode == Enum.KeyCode.One then SelectedSlot = 1; UpdateUI()
+	elseif input.KeyCode == Enum.KeyCode.Two then SelectedSlot = 2; UpdateUI()
+	elseif input.KeyCode == Enum.KeyCode.Three then SelectedSlot = 3; UpdateUI()
+	elseif input.KeyCode == SaveKey then SaveBtn:Activate()
+	elseif input.KeyCode == TeleportKey then InstantTpBtn:Activate()
+	end
+end)
+
+-- ==========================================
+-- 2. Teleport & NPC Pages
+-- ==========================================
+local TpPage = Pages["Tp"]
+AddTeleportButton(TpPage, "Mansion", "Mansion", Vector3.new(-12466, 376, -7542))
+AddTeleportButton(TpPage, "Hydra", "Hydra Island", Vector3.new(5663, 1013, -336))
+AddTeleportButton(TpPage, "ZTest1", "ZTest 1", Vector3.new(919, 125, 32946))
+AddTeleportButton(TpPage, "ZTest2", "ZTest 2", Vector3.new(-288, 306, 601))
+
+local NpcPage = Pages["NPC"]
+AddTeleportButton(NpcPage, "Sanguine", "Sanguine", Vector3.new(-16517, 23, -188))
+AddTeleportButton(NpcPage, "Cafe", "Cafe", Vector3.new(-382, 73, 355))
+AddTeleportButton(NpcPage, "GodHuman", "GodHuman", Vector3.new(-13775, 339, -9880))
+
+Updatefalse
