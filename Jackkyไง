@@ -1,0 +1,89 @@
+local Players = game:GetService("Players")
+
+local player = Players.LocalPlayer
+local shakeConn = nil
+local miniGameConn = nil
+
+local function getRemotes(tool)
+	local m = tool and tool:FindFirstChild("Mechanics")
+	return m and m:FindFirstChild("Remotes")
+end
+
+local function getStatus(tool)
+	local m = tool and tool:FindFirstChild("Mechanics")
+	return m and m:FindFirstChild("Status")
+end
+
+local function isRod(tool)
+	return tool and tool:IsA("Tool") and tool:FindFirstChild("Mechanics") ~= nil
+end
+
+local function getFishingActive(tool)
+	local s = getStatus(tool)
+	if not s then return false end
+	local v = s:FindFirstChild("FishingActive")
+	return v and v.Value or false
+end
+
+local function setupTool(tool)
+	if shakeConn then shakeConn:Disconnect() shakeConn = nil end
+	if miniGameConn then miniGameConn:Disconnect() miniGameConn = nil end
+
+	local remotes = getRemotes(tool)
+	if not remotes then return end
+
+	local se = remotes:FindFirstChild("ShakeEvent")
+	if se then
+		shakeConn = se.OnClientEvent:Connect(function(param)
+			if param == "Start" then
+				se:FireServer("Complete")
+			end
+		end)
+	end
+
+	local mg = remotes:FindFirstChild("MiniGame")
+	if mg then
+		miniGameConn = mg.OnClientEvent:Connect(function(action)
+			if action == "Start" then
+				task.wait(1.2)
+				mg:FireServer(true, {})
+			end
+		end)
+	end
+end
+
+local function mainLoop()
+	while true do
+		local char = player.Character
+		local tool = char and char:FindFirstChildWhichIsA("Tool")
+		if tool and isRod(tool) then
+			setupTool(tool)
+			while tool and tool.Parent == player.Character do
+				if getFishingActive(tool) then
+					task.wait(0.3)
+				else
+					local remotes = getRemotes(tool)
+					if remotes then
+						local castEvent = remotes:FindFirstChild("CastEvent")
+						if castEvent then
+							castEvent:FireServer(false, 95, Vector3.new(1, 0, 0))
+						end
+					end
+					local deadline = os.clock() + 15
+					while tool and tool.Parent == player.Character and os.clock() < deadline do
+						if getFishingActive(tool) then break end
+						task.wait(0.2)
+					end
+				end
+			end
+		end
+		task.wait(0.5)
+	end
+end
+
+player.CharacterAdded:Connect(function()
+	shakeConn = nil
+	miniGameConn = nil
+end)
+
+task.spawn(mainLoop)
