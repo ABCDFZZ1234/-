@@ -1,0 +1,244 @@
+local Players = game:GetService("Players")
+local CoreGui = game:GetService("CoreGui")
+local TweenService = game:GetService("TweenService")
+
+local player = Players.LocalPlayer
+local shakeConn = nil
+local miniGameConn = nil
+local autoFishEnabled = false -- สถานะเปิด/ปิด Auto Fish
+
+---------------------------------------------------------
+# [1] สร้าง UI สไตล์ Dark Theme (เหมือนในรูป)
+---------------------------------------------------------
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "FishingHubUI"
+-- ตรวจสอบว่าสามารถลงใน CoreGui ได้หรือไม่ ถ้าไม่ได้จะลง PlayerGui
+ScreenGui.Parent = (gethui and gethui()) or (syn and syn.protect_gui and syn.protect_gui(ScreenGui)) or CoreGui or player:WaitForChild("PlayerGui")
+
+-- ปุ่มวงกลมเล็กสำหรับ ย่อ/ขยาย หน้าต่าง Hub
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Name = "ToggleBtn"
+ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
+ToggleBtn.Position = UDim2.new(0.02, 0, 0.4, 0)
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleBtn.Text = "HUB"
+ToggleBtn.Font = Enum.Font.SourceSansBold
+ToggleBtn.TextSize = 16
+ToggleBtn.Active = true
+ToggleBtn.Draggable = true -- สามารถลากปุ่มนี้วางตรงไหนก็ได้ในจอ
+ToggleBtn.Parent = ScreenGui
+
+local UICornerBtn = Instance.new("UICorner")
+UICornerBtn.CornerRadius = UDim.new(1, 0)
+UICornerBtn.Parent = ToggleBtn
+
+-- กรอบหน้าต่างหลัก (Main Frame)
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 420, 0, 260)
+MainFrame.Position = UDim2.new(0.5, -210, 0.5, -130)
+MainFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true -- ลากย้ายหน้าต่างหลักได้
+MainFrame.Parent = ScreenGui
+
+local UICornerMain = Instance.new("UICorner")
+UICornerMain.CornerRadius = UDim.new(0, 8)
+UICornerMain.Parent = MainFrame
+
+-- แถบ TopBar ข้างบน
+local TopBar = Instance.new("Frame")
+TopBar.Name = "TopBar"
+TopBar.Size = UDim2.new(1, 0, 0, 40)
+TopBar.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+TopBar.BorderSizePixel = 0
+TopBar.Parent = MainFrame
+
+local UICornerTop = Instance.new("UICorner")
+UICornerTop.CornerRadius = UDim.new(0, 8)
+UICornerTop.Parent = TopBar
+
+-- หัวข้อ HUB
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Size = UDim2.new(0, 200, 1, 0)
+TitleLabel.Position = UDim2.new(0, 15, 0, 0)
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.Text = "AUTO FISH HUB"
+TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+TitleLabel.Font = Enum.Font.SourceSansBold
+TitleLabel.TextSize = 18
+TitleLabel.Parent = TopBar
+
+-- ปุ่มปิดหน้าต่าง (X)
+CloseBtn = Instance.new("TextButton")
+CloseBtn.Size = UDim2.new(0, 40, 1, 0)
+CloseBtn.Position = UDim2.new(1, -40, 0, 0)
+CloseBtn.BackgroundTransparency = 1
+CloseBtn.Text = "✕"
+CloseBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+CloseBtn.Font = Enum.Font.SourceSansBold
+CloseBtn.TextSize = 18
+CloseBtn.Parent = TopBar
+
+CloseBtn.MouseButton1Click:Connect(function()
+	MainFrame.Visible = false
+end)
+
+ToggleBtn.MouseButton1Click:Connect(function()
+	MainFrame.Visible = not MainFrame.Visible
+end)
+
+-- พื้นที่ด้านในสำหรับวางฟังก์ชัน
+local ContentFrame = Instance.new("Frame")
+ContentFrame.Size = UDim2.new(1, -20, 1, -55)
+ContentFrame.Position = UDim2.new(0, 10, 0, 48)
+ContentFrame.BackgroundTransparency = 1
+ContentFrame.Parent = MainFrame
+
+-- กล่องรายการ Auto Fish (Dark Card)
+local ItemCard = Instance.new("Frame")
+ItemCard.Size = UDim2.new(1, 0, 0, 50)
+ItemCard.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
+ItemCard.BorderSizePixel = 0
+ItemCard.Parent = ContentFrame
+
+local UICornerCard = Instance.new("UICorner")
+UICornerCard.CornerRadius = UDim.new(0, 6)
+UICornerCard.Parent = ItemCard
+
+local ItemTitle = Instance.new("TextLabel")
+ItemTitle.Size = UDim2.new(0, 200, 1, 0)
+ItemTitle.Position = UDim2.new(0, 15, 0, 0)
+ItemTitle.BackgroundTransparency = 1
+ItemTitle.Text = "ตกปลาอัตโนมัติ (Auto Fish)"
+ItemTitle.TextColor3 = Color3.fromRGB(220, 220, 220)
+ItemTitle.TextXAlignment = Enum.TextXAlignment.Left
+ItemTitle.Font = Enum.Font.SourceSans
+ItemTitle.TextSize = 16
+ItemTitle.Parent = ItemCard
+
+-- ปุ่มสวิตช์ เปิด/ปิด
+local SwitchBtn = Instance.new("TextButton")
+SwitchBtn.Size = UDim2.new(0, 80, 0, 30)
+SwitchBtn.Position = UDim2.new(1, -90, 0.5, -15)
+SwitchBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+SwitchBtn.Text = "OFF"
+SwitchBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+SwitchBtn.Font = Enum.Font.SourceSansBold
+SwitchBtn.TextSize = 14
+SwitchBtn.Parent = ItemCard
+
+local UICornerSwitch = Instance.new("UICorner")
+UICornerSwitch.CornerRadius = UDim.new(0, 4)
+UICornerSwitch.Parent = SwitchBtn
+
+---------------------------------------------------------
+# [2] โค้ดระบบ Auto Fish (เดิม)
+---------------------------------------------------------
+local function getRemotes(tool)
+	local m = tool and tool:FindFirstChild("Mechanics")
+	return m and m:FindFirstChild("Remotes")
+end
+
+local function getStatus(tool)
+	local m = tool and tool:FindFirstChild("Mechanics")
+	return m and m:FindFirstChild("Status")
+end
+
+local function isRod(tool)
+	return tool and tool:IsA("Tool") and tool:FindFirstChild("Mechanics") ~= nil
+end
+
+local function getFishingActive(tool)
+	local s = getStatus(tool)
+	if not s then return false end
+	local v = s:FindFirstChild("FishingActive")
+	return v and v.Value or false
+end
+
+local function setupTool(tool)
+	if shakeConn then shakeConn:Disconnect() shakeConn = nil end
+	if miniGameConn then miniGameConn:Disconnect() miniGameConn = nil end
+
+	local remotes = getRemotes(tool)
+	if not remotes then return end
+
+	local se = remotes:FindFirstChild("ShakeEvent")
+	if se then
+		shakeConn = se.OnClientEvent:Connect(function(param)
+			if autoFishEnabled and param == "Start" then
+				se:FireServer("Complete")
+			end
+		end)
+	end
+
+	local mg = remotes:FindFirstChild("MiniGame")
+	if mg then
+		miniGameConn = mg.OnClientEvent:Connect(function(action)
+			if autoFishEnabled and action == "Start" then
+				task.wait(1.2)
+				mg:FireServer(true, {})
+			end
+		end)
+	end
+end
+
+local function mainLoop()
+	while true do
+		if autoFishEnabled then
+			local char = player.Character
+			local tool = char and char:FindFirstChildWhichIsA("Tool")
+			if tool and isRod(tool) then
+				setupTool(tool)
+				while autoFishEnabled and tool and tool.Parent == player.Character do
+					if getFishingActive(tool) then
+						task.wait(0.3)
+					else
+						local remotes = getRemotes(tool)
+						if remotes then
+							local castEvent = remotes:FindFirstChild("CastEvent")
+							if castEvent then
+								castEvent:FireServer(false, 95, Vector3.new(1, 0, 0))
+							end
+						end
+						local deadline = os.clock() + 15
+						while autoFishEnabled and tool and tool.Parent == player.Character and os.clock() < deadline do
+							if getFishingActive(tool) then break end
+							task.wait(0.2)
+						end
+					end
+				end
+			end
+		end
+		task.wait(0.5)
+	end
+end
+
+---------------------------------------------------------
+# [3] เชื่อมต่อสวิตช์ UI กับระบบ
+---------------------------------------------------------
+SwitchBtn.MouseButton1Click:Connect(function()
+	autoFishEnabled = not autoFishEnabled
+	if autoFishEnabled then
+		SwitchBtn.Text = "ON"
+		SwitchBtn.BackgroundColor3 = Color3.fromRGB(46, 139, 87) -- สีเขียว
+		SwitchBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	else
+		SwitchBtn.Text = "OFF"
+		SwitchBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60) -- สีเทา
+		SwitchBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+		
+		if shakeConn then shakeConn:Disconnect() shakeConn = nil end
+		if miniGameConn then miniGameConn:Disconnect() miniGameConn = nil end
+	end
+end)
+
+player.CharacterAdded:Connect(function()
+	shakeConn = nil
+	miniGameConn = nil
+end)
+
+task.spawn(mainLoop)
